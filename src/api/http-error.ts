@@ -71,3 +71,15 @@ export function getHttpErrorMessage(
 
   return fallbackMessage;
 }
+
+/** The API's error code (e.g. `VOTE_ALREADY_CAST`), when there is one. */
+export function getHttpErrorCode(error: unknown): string | null {
+  if (!isObject(error) || !isObject(error.response)) {
+    return null;
+  }
+
+  const payload = error.response.data;
+  return isObject(payload) && typeof payload.code === "string"
+    ? payload.code
+    : null;
+}

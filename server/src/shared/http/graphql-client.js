@@ -46,13 +46,15 @@ function getOperationName(query) {
 /**
  * Calls the backend server-to-server. The shared secret proves the call
  * comes from this BFF, which is what lets the backend trust `x-client-ip`
- * for per-user rate limiting.
+ * for per-user rate limiting. `sessionToken` (from the httpOnly cookie)
+ * identifies the signed-in voter.
  */
 export async function executeGraphql({
   query,
   variables,
   clientIp,
   requestId,
+  sessionToken,
 }) {
   const operationName = getOperationName(query);
   const startedAt = Date.now();
@@ -69,6 +71,7 @@ export async function executeGraphql({
             : {}),
           ...(clientIp ? { "x-client-ip": clientIp } : {}),
           ...(requestId ? { "x-request-id": requestId } : {}),
+          ...(sessionToken ? { authorization: `Bearer ${sessionToken}` } : {}),
         },
       },
     );

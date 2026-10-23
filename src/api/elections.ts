@@ -56,9 +56,8 @@ export interface ElectionResults extends VoteCounts {
   states: StateResult[];
 }
 
+/** The voter is whoever is signed in (session cookie), not part of this. */
 export interface CastVotePayload {
-  cpf: string;
-  birthDate: string;
   candidateSlug: string;
   state: string;
   privacyConsent: true;
@@ -149,7 +148,7 @@ export interface ElectionAnalytics {
   updatedAt: string;
 }
 
-interface ApiResponse<T> {
+export interface ApiResponse<T> {
   success: boolean;
   message?: string;
   code?: string;

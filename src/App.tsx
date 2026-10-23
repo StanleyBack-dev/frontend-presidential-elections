@@ -114,10 +114,9 @@ function ElectionPage() {
         <div className="mx-auto flex max-w-6xl items-start gap-2 px-4 py-6 text-xs text-slate-500">
           <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           <p>
-            Privacidade: o CPF é usado só para impedir votos duplicados e fica
-            guardado apenas como código criptográfico irreversível, separado do
-            voto. A data de nascimento serve apenas para confirmar a identidade
-            e não é armazenada.
+            Privacidade: a conta Google é usada só para impedir votos
+            duplicados. Guardamos apenas um código criptográfico irreversível da
+            conta, separado do voto; seu nome e e-mail não são armazenados.
           </p>
         </div>
         <p className="mx-auto max-w-6xl px-4 pb-6 text-xs text-slate-400">

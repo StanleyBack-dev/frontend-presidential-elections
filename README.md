@@ -24,12 +24,15 @@ npm run dev:lan    # idem, acessível pelo celular na mesma rede Wi-Fi
 
 ## Endpoints do BFF
 
-| Método | Rota                        | Descrição                                  |
-| ------ | --------------------------- | ------------------------------------------ |
-| GET    | `/api/elections/candidates` | Candidatos (cache de CDN de 1h)            |
-| GET    | `/api/elections/results`    | Totais, % e votos por estado (cache de 5s) |
-| GET    | `/api/elections/analytics`  | Análise com filtros (cache de 10s)         |
-| POST   | `/api/elections/votes`      | Registra um voto                           |
+| Método | Rota                        | Descrição                                                |
+| ------ | --------------------------- | -------------------------------------------------------- |
+| GET    | `/api/elections/candidates` | Candidatos (cache de CDN de 1h)                          |
+| GET    | `/api/elections/results`    | Totais, % e votos por estado (cache de 5s)               |
+| GET    | `/api/elections/analytics`  | Análise com filtros (cache de 10s)                       |
+| POST   | `/api/auth/google`          | Troca o ID token do Google pela sessão (cookie httpOnly) |
+| GET    | `/api/auth/me`              | Quem está conectado e se já votou                        |
+| POST   | `/api/auth/logout`          | Encerra a sessão                                         |
+| POST   | `/api/elections/votes`      | Registra o voto da conta conectada (1 por conta)         |
 
 Filtros de `/analytics` (query string): `region`, `states` (`SP,RJ`), `from`, `to`, `leader`, `minVotes`, `sortBy`, `sortCandidate`, `order`, `granularity`. Parâmetros desconhecidos ou inválidos retornam 400. No site, os filtros ficam na URL (`?regiao=sudeste&periodo=24h`).
 
@@ -40,7 +43,7 @@ Depois de votar, o site gera no navegador uma imagem 1080×1920 (formato Stories
 - **Voto visível por padrão**, com opção de esconder antes de compartilhar.
 - **"Postar nos Stories":** abre o compartilhamento nativo do celular com a imagem anexada. Sites não podem postar direto nos Stories; isso é exclusivo de apps nativos.
 - **WhatsApp, Telegram, X e Facebook:** no celular, enviam a imagem com um texto com emojis como legenda. No computador, abrem o link do app; a imagem chega pela prévia do link.
-- **Privacidade:** CPF e data de nascimento nunca aparecem. Para reabrir o comprovante, o navegador guarda localmente estado, horário e opção escolhida; nada disso vai para o servidor.
+- **Privacidade:** nome e e-mail nunca aparecem. Para reabrir o comprovante, o navegador guarda localmente estado, horário e opção escolhida; nada disso vai para o servidor.
 
 ### Prévia do link (Open Graph)
 

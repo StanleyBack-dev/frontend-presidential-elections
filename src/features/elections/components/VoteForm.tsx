@@ -1,19 +1,25 @@
 import { useRef, useState, type FormEvent } from "react";
-import { CheckCircle2, Loader2, Receipt, ShieldCheck } from "lucide-react";
+import {
+  CheckCircle2,
+  Loader2,
+  LogOut,
+  Receipt,
+  ShieldCheck,
+} from "lucide-react";
+import type { Voter } from "../../../api/auth";
 import {
   castVote,
   type BallotOption,
   type Candidate,
 } from "../../../api/elections";
-import { getHttpErrorMessage } from "../../../api/http-error";
+import { getHttpErrorCode, getHttpErrorMessage } from "../../../api/http-error";
 import { BRAZILIAN_STATE_OPTIONS } from "../../../shared/constants/brazilian-states";
 import { useToast } from "../../../shared/toast";
-import {
-  birthDateToIso,
-  maskBirthDate,
-} from "../../../shared/utils/birth-date";
-import { isValidCpf, maskCpf, onlyDigits } from "../../../shared/utils/cpf";
+import GoogleSignInButton from "../../auth/components/GoogleSignInButton";
+import { useVoterSession } from "../../auth/hooks/useVoterSession";
 import CandidatePhoto from "./CandidatePhoto";
+import FormField from "./FormField";
+import { inputClass } from "./form-styles";
 import TurnstileWidget, { type TurnstileHandle } from "./TurnstileWidget";
 import ReceiptModal, {
   type VoteReceipt,
@@ -100,10 +106,10 @@ export default function VoteForm({
 }: VoteFormProps) {
   const { showError, showSuccess } = useToast();
   const turnstileRef = useRef<TurnstileHandle>(null);
+  const session = useVoterSession();
+  const { voter } = session;
 
   const [candidateSlug, setCandidateSlug] = useState("");
-  const [cpf, setCpf] = useState("");
-  const [birthDate, setBirthDate] = useState("");
   const [state, setState] = useState("");
   const [consent, setConsent] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -112,32 +118,44 @@ export default function VoteForm({
   const [storedReceipt, setStoredReceipt] = useState(readStoredReceipt);
   const [openReceipt, setOpenReceipt] = useState<VoteReceipt | null>(null);
 
-  const cpfComplete = onlyDigits(cpf).length === 11;
-  const cpfError = cpfComplete && !isValidCpf(cpf) ? "CPF inválido." : null;
-  const birthDateIso = birthDateToIso(birthDate);
-  const birthDateError =
-    birthDate.length === 10 && !birthDateIso ? "Data inválida." : null;
+  const captchaReady = !TURNSTILE_SITE_KEY || Boolean(captchaToken);
+
+  // What still blocks the vote, in the order the form asks for it.
+  const missingSteps = [
+    !candidateSlug && "escolha uma opção de voto",
+    !state && "selecione o estado",
+    !consent && "aceite o aviso de privacidade",
+    !captchaReady && "conclua a verificação anti-robô",
+  ].filter((step): step is string => Boolean(step));
 
   const canSubmit =
-    votingOpen &&
-    !submitting &&
-    Boolean(candidateSlug) &&
-    cpfComplete &&
-    !cpfError &&
-    Boolean(birthDateIso) &&
-    Boolean(state) &&
-    consent &&
-    (!TURNSTILE_SITE_KEY || Boolean(captchaToken));
+    votingOpen && !submitting && Boolean(voter) && missingSteps.length === 0;
+
+  async function handleSignIn(idToken: string) {
+    const signedIn = await session.signIn(idToken);
+    if (signedIn.hasVoted) {
+      showError(
+        "Esta conta já votou",
+        "Cada conta Google pode votar uma única vez.",
+        6000,
+      );
+    } else {
+      showSuccess("Conta conectada", `Votando como ${signedIn.name}.`);
+    }
+  }
+
+  async function handleSwitchAccount() {
+    await session.signOut();
+    setVoted(false);
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!canSubmit || !birthDateIso) return;
+    if (!canSubmit) return;
 
     setSubmitting(true);
     try {
       const response = await castVote({
-        cpf: onlyDigits(cpf),
-        birthDate: birthDateIso,
         candidateSlug,
         state,
         privacyConsent: true,
@@ -158,8 +176,7 @@ export default function VoteForm({
         choice: toReceiptChoice(candidateSlug, candidates, otherOptions),
       });
       setVoted(true);
-      setCpf("");
-      setBirthDate("");
+      session.markVoted();
       showSuccess("Voto registrado!", response.message);
       onVoted();
     } catch (error) {
@@ -168,6 +185,10 @@ export default function VoteForm({
         getHttpErrorMessage(error, "Tente novamente em instantes."),
         6000,
       );
+
+      const code = getHttpErrorCode(error);
+      if (code === "AUTH_REQUIRED") session.forget();
+      if (code === "VOTE_ALREADY_CAST") session.markVoted();
       // Turnstile tokens are single-use.
       turnstileRef.current?.reset();
     } finally {
@@ -193,16 +214,18 @@ export default function VoteForm({
     );
   }
 
-  if (voted) {
+  if (voted || voter?.hasVoted) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm">
         <CheckCircle2 className="h-10 w-10 text-emerald-600" aria-hidden />
         <p className="text-lg font-semibold text-emerald-900">
-          Seu voto foi registrado neste dispositivo.
+          {voted
+            ? "Seu voto foi registrado neste dispositivo."
+            : "Esta conta Google já registrou um voto."}
         </p>
         <p className="max-w-md text-sm text-emerald-800">
-          Cada CPF pode votar uma única vez. Acompanhe os resultados em tempo
-          real abaixo.
+          Cada conta Google pode votar uma única vez. Acompanhe os resultados em
+          tempo real abaixo.
         </p>
         {storedReceipt && (
           <button
@@ -229,9 +252,9 @@ export default function VoteForm({
         <button
           type="button"
           className="text-xs font-medium text-emerald-700 underline underline-offset-2"
-          onClick={() => setVoted(false)}
+          onClick={() => void handleSwitchAccount()}
         >
-          Votar com outro CPF
+          Votar com outra conta Google
         </button>
         {receiptModal}
       </div>
@@ -337,34 +360,10 @@ export default function VoteForm({
 
       <fieldset className="mt-6">
         <legend className="text-sm font-semibold text-slate-900">
-          2. Confirme seus dados
+          2. Onde você vota
         </legend>
-        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="CPF" error={cpfError}>
-            <input
-              inputMode="numeric"
-              autoComplete="off"
-              placeholder="000.000.000-00"
-              value={cpf}
-              onChange={(e) => setCpf(maskCpf(e.target.value))}
-              className={inputClass(Boolean(cpfError))}
-              maxLength={14}
-              required
-            />
-          </Field>
-          <Field label="Data de nascimento" error={birthDateError}>
-            <input
-              inputMode="numeric"
-              autoComplete="bday"
-              placeholder="DD/MM/AAAA"
-              value={birthDate}
-              onChange={(e) => setBirthDate(maskBirthDate(e.target.value))}
-              className={inputClass(Boolean(birthDateError))}
-              maxLength={10}
-              required
-            />
-          </Field>
-          <Field label="Estado onde vota">
+        <div className="mt-3 sm:max-w-xs">
+          <FormField label="Estado">
             <select
               value={state}
               onChange={(e) => setState(e.target.value)}
@@ -378,77 +377,124 @@ export default function VoteForm({
                 </option>
               ))}
             </select>
-          </Field>
+          </FormField>
         </div>
       </fieldset>
 
-      <label className="mt-5 flex items-start gap-3 text-sm text-slate-600">
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={(e) => setConsent(e.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300"
-        />
-        <span>
-          Autorizo o uso do meu CPF e data de nascimento apenas para confirmar
-          minha identidade e impedir votos duplicados. O CPF é guardado somente
-          como código criptográfico irreversível, sem vínculo com o voto, e a
-          data de nascimento não é armazenada (LGPD).
-        </span>
-      </label>
+      <fieldset className="mt-6">
+        <legend className="text-sm font-semibold text-slate-900">
+          3. Confirme com sua conta Google
+        </legend>
+        <p className="mt-1 text-xs text-slate-500">
+          Cada conta Google vota uma única vez.
+        </p>
 
-      {TURNSTILE_SITE_KEY && (
-        <div className="mt-5">
-          <TurnstileWidget
-            ref={turnstileRef}
-            siteKey={TURNSTILE_SITE_KEY}
-            onToken={setCaptchaToken}
+        {voter && (
+          <VoterBadge
+            voter={voter}
+            onSwitch={() => void handleSwitchAccount()}
           />
+        )}
+
+        <label className="mt-4 flex items-start gap-3 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300"
+          />
+          <span>
+            Declaro ter 16 anos ou mais e autorizo o uso da minha conta Google
+            apenas para impedir votos duplicados. Guardamos somente um código
+            criptográfico irreversível da conta, nunca seu nome ou e-mail, e sem
+            vínculo com o voto (LGPD).
+          </span>
+        </label>
+
+        {TURNSTILE_SITE_KEY && (
+          <div className="mt-4">
+            <TurnstileWidget
+              ref={turnstileRef}
+              siteKey={TURNSTILE_SITE_KEY}
+              onToken={setCaptchaToken}
+            />
+          </div>
+        )}
+      </fieldset>
+
+      {session.loading ? (
+        <div className="mt-6 flex justify-center text-slate-500">
+          <Loader2 className="h-5 w-5 animate-spin" aria-label="Carregando" />
+        </div>
+      ) : voter ? (
+        <>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3.5 text-base font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {submitting ? (
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+            ) : (
+              <ShieldCheck className="h-5 w-5" aria-hidden />
+            )}
+            {submitting ? "Registrando voto..." : "Confirmar voto"}
+          </button>
+          {votingOpen && !submitting && missingSteps.length > 0 && (
+            <p className="mt-2 text-center text-xs text-slate-500">
+              Para votar: {missingSteps.join(", ")}.
+            </p>
+          )}
+        </>
+      ) : (
+        <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+          <p className="mb-3 text-sm font-medium text-slate-700">
+            Para confirmar o voto, entre com sua conta Google.
+          </p>
+          <GoogleSignInButton onCredential={handleSignIn} />
         </div>
       )}
-
-      <button
-        type="submit"
-        disabled={!canSubmit}
-        className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3.5 text-base font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-      >
-        {submitting ? (
-          <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-        ) : (
-          <ShieldCheck className="h-5 w-5" aria-hidden />
-        )}
-        {submitting ? "Validando CPF..." : "Confirmar voto"}
-      </button>
     </form>
   );
 }
 
-function inputClass(hasError: boolean) {
-  return `w-full rounded-lg border bg-white px-3 py-2.5 text-base text-slate-900 outline-none transition focus:ring-2 ${
-    hasError
-      ? "border-red-400 focus:ring-red-200"
-      : "border-slate-300 focus:border-emerald-600 focus:ring-emerald-100"
-  }`;
-}
-
-function Field({
-  label,
-  error,
-  children,
+function VoterBadge({
+  voter,
+  onSwitch,
 }: {
-  label: string;
-  error?: string | null;
-  children: React.ReactNode;
+  voter: Voter;
+  onSwitch: () => void;
 }) {
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </span>
-      {children}
-      {error && (
-        <span className="mt-1 block text-xs text-red-600">{error}</span>
+    <div className="mt-3 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+      {voter.pictureUrl ? (
+        <img
+          src={voter.pictureUrl}
+          alt=""
+          referrerPolicy="no-referrer"
+          className="h-9 w-9 shrink-0 rounded-full"
+        />
+      ) : (
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold text-white">
+          {voter.name.charAt(0).toUpperCase()}
+        </span>
       )}
-    </label>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-emerald-900">
+          Votando como {voter.name}
+        </span>
+        <span className="block truncate text-xs text-emerald-800">
+          {voter.email}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={onSwitch}
+        className="flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-700 underline underline-offset-2"
+      >
+        <LogOut className="h-3.5 w-3.5" aria-hidden />
+        Sair
+      </button>
+    </div>
   );
 }

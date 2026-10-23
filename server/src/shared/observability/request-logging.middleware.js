@@ -12,7 +12,7 @@ function resolveRoute(req) {
 }
 
 // Logs method/route/status/timing only. Request and response bodies are never
-// logged: they carry CPFs and birth dates.
+// logged: they carry Google credentials and session tokens.
 export function requestLoggingMiddleware(req, res, next) {
   const requestId = randomUUID();
   const startedAtNs = process.hrtime.bigint();

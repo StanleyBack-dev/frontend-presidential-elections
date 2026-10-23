@@ -1,6 +1,10 @@
 import { ElectionsService } from "../services/elections.service.js";
 import { HttpError } from "../../../shared/http/http-error.js";
 import { sendError } from "../../../shared/http/error-response.js";
+import {
+  clearSessionCookie,
+  readSessionToken,
+} from "../../../shared/http/session-cookie.js";
 import { parseAnalyticsFilter } from "../validators/analytics-filter.js";
 
 const electionsService = new ElectionsService();
@@ -9,26 +13,29 @@ function requestContext(req) {
   return { clientIp: req.ip, requestId: req.requestId };
 }
 
-// Only these fields, with these types, are forwarded upstream.
+const isOptionalCaptcha = (token) =>
+  token === undefined || (typeof token === "string" && token.length <= 2048);
+
+function areShortStrings(input, fields) {
+  return fields.every(
+    (field) => typeof input[field] === "string" && input[field].length <= 40,
+  );
+}
+
+// Only these fields, with these types, are forwarded upstream. The voter's
+// identity is the session cookie, never something in the body.
 function pickVoteInput(body) {
   const input = {
-    cpf: body?.cpf,
-    birthDate: body?.birthDate,
     candidateSlug: body?.candidateSlug,
     state: body?.state,
     privacyConsent: body?.privacyConsent,
     captchaToken: body?.captchaToken || undefined,
   };
 
-  const stringFields = ["cpf", "birthDate", "candidateSlug", "state"];
   const isValid =
-    stringFields.every(
-      (field) => typeof input[field] === "string" && input[field].length <= 40,
-    ) &&
+    areShortStrings(input, ["candidateSlug", "state"]) &&
     input.privacyConsent === true &&
-    (input.captchaToken === undefined ||
-      (typeof input.captchaToken === "string" &&
-        input.captchaToken.length <= 2048));
+    isOptionalCaptcha(input.captchaToken);
 
   if (!isValid) {
     throw new HttpError(400, "Dados do voto inválidos.");
@@ -89,16 +96,25 @@ export function getAnalyticsController() {
 
 export function castVoteController() {
   return async (req, res) => {
+    res.set("Cache-Control", "no-store");
     try {
-      const input = pickVoteInput(req.body);
-      const result = await electionsService.castVote(
-        input,
-        requestContext(req),
-      );
-      res.set("Cache-Control", "no-store");
+      const sessionToken = readSessionToken(req);
+      if (!sessionToken) {
+        throw new HttpError(401, "Entre com sua conta Google para votar.", {
+          code: "AUTH_REQUIRED",
+        });
+      }
+
+      const result = await electionsService.castVote(pickVoteInput(req.body), {
+        ...requestContext(req),
+        sessionToken,
+      });
       res.status(201).json(result);
     } catch (error) {
-      res.set("Cache-Control", "no-store");
+      // The session expired or was revoked: drop the dead cookie.
+      if (error instanceof HttpError && error.code === "AUTH_REQUIRED") {
+        clearSessionCookie(res);
+      }
       sendError(res, error);
     }
   };

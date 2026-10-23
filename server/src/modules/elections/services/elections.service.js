@@ -153,7 +153,7 @@ export class ElectionsService {
     return data.electionAnalytics;
   }
 
-  async castVote(input, { clientIp, requestId }) {
+  async castVote(input, { clientIp, requestId, sessionToken }) {
     const mutation = `
       mutation CastVote($input: CastVoteInputDto!) {
         castVote(input: $input) {
@@ -175,6 +175,7 @@ export class ElectionsService {
       variables: { input },
       clientIp,
       requestId,
+      sessionToken,
     });
     return data.castVote;
   }
