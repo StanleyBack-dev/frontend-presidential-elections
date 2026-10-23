@@ -126,8 +126,8 @@ const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
 });
 
 /**
- * Renders the shareable receipt as a PNG. Contains no personal data: no CPF,
- * no birth date — only the state, the time and, if the voter opted in,
+ * Renders the shareable receipt as a PNG. Contains no personal data: no
+ * name or e-mail — only the state, the time and, if the voter opted in,
  * their vote (candidate, blank or null).
  */
 export async function renderReceiptImage(data: ReceiptData): Promise<Blob> {

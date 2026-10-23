@@ -2,8 +2,9 @@ import { config } from "../../config/env.js";
 
 const SENSITIVE_KEYS = new Set([
   "authorization",
-  "cpf",
-  "birthdate",
+  "email",
+  "idtoken",
+  "sessiontoken",
   "captchatoken",
   "x-internal-secret",
 ]);

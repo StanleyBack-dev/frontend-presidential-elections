@@ -255,7 +255,7 @@ export default function ReceiptModal({ receipt, onClose }: ReceiptModalProps) {
             </button>
           )}
           <p className="mt-2 text-center text-[11px] text-slate-400">
-            O comprovante não contém CPF nem data de nascimento.
+            O comprovante não contém seu nome, e-mail nem outros dados pessoais.
           </p>
 
           <button
